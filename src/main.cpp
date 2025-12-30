@@ -52,9 +52,25 @@ int main(int argc, char **argv) {
 
   // Uncomment the code below to pass the first stage
   // 
-   accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+  int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
    std::cout << "Client connected\n";
+  char buffer[1024] = {0};
+  const char* p = "+PONG\r\n";
+  while(true) {
+    int bytes = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+    if(bytes==0) {
+      std::cout << "Connection closed\n";
+      break;
+    }
+    else if(bytes<0) {
+      std::cerr << "Error while recieving\n";
+      break;
+    }
+    send(client_fd, p, strlen(p), 0);
+    close(client_fd); break;
+  }
   // 
+  //close(client_fd);
    close(server_fd);
 
   return 0;
