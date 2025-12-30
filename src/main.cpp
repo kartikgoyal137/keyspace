@@ -67,10 +67,9 @@ int main(int argc, char **argv) {
       break;
     }
     send(client_fd, p, strlen(p), 0);
-    close(client_fd); break;
   }
   // 
-  //close(client_fd);
+   close(client_fd);
    close(server_fd);
 
   return 0;
