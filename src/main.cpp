@@ -7,6 +7,79 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <thread>
+#include <vector>
+#include <transform>
+
+void handle_command(int client_fd, std::vector<std::string>& command) {
+  if(command.size()>0) {
+    std::string cmd = command[0];
+    transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
+
+    if(cmd=="PING") {
+      send(client_fd, "+PONG\r\n", 7, 0)
+    }
+    else if (cmd=="ECHO") {
+      std::string text = command[1];
+      std::string response = "$"+to_string(text.length())+"\r\n"+text+"\r\n";
+
+      send(client_fd, response.c_str(), response.length(), 0);
+    }
+  }
+
+}
+
+std::vector<std::string> resp_parser(int client_fd, const char* buffer) {
+  std::vector<std::string> args; int pos = 0;
+  if(buffer[pos]!='*') return args;
+  pos++; int tokens = 0;
+  while(buffer[pos]!='\r') {
+    tokens = tokens*10 + (buffer[pos]-'0');
+    pos++;
+  }
+
+  pos+=2;
+
+  for(int i=0; i<tokens; i++) {
+    if(buffer[pos]!='$') break;
+    pos++; int str_len = 0;
+    while(buffer[pos]!='\r') {
+      str_len = str_len*10 + (buffer[pos]-'0'); 
+      pos++;
+    }
+    pos+=2;
+
+    std::string arg(buffer+pos, str_len);
+    args.push_back(arg);
+    pos+= str_len+2;
+  }
+
+  return args;
+}
+
+void handle_client(int client_fd) {
+   std::cout << "Client connected\n";
+  char buffer[1024] = {0};
+  const char* p = "+PONG\r\n";
+  while(true) {
+    memset(buffer, 0, sizeof(buffer));
+    int bytes = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+    if(bytes==0) {
+      std::cout << "Connection closed\n";
+      break;
+    }
+    else if(bytes<0) {
+      std::cerr << "Error while recieving\n";
+      break;
+    }
+    
+    std::vector<std::string> command = resp_parser(client_fd, buffer);
+    handle_command(client_fd, command);
+  }
+  // 
+   close(client_fd);
+}
+
 
 int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
@@ -42,35 +115,28 @@ int main(int argc, char **argv) {
     std::cerr << "listen failed\n";
     return 1;
   }
+
+  while(true) {
   
   struct sockaddr_in client_addr;
-  int client_addr_len = sizeof(client_addr);
+  socklen_t client_addr_len = sizeof(client_addr);
   std::cout << "Waiting for a client to connect...\n";
 
   // You can use print statements as follows for debugging, they'll be visible when running tests.
   std::cout << "Logs from your program will appear here!\n";
 
   // Uncomment the code below to pass the first stage
-  // 
-  int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
-   std::cout << "Client connected\n";
-  char buffer[1024] = {0};
-  const char* p = "+PONG\r\n";
-  while(true) {
-    int bytes = recv(client_fd, buffer, sizeof(buffer)-1, 0);
-    if(bytes==0) {
-      std::cout << "Connection closed\n";
-      break;
+  int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
+  if(client_fd<0) {
+      std::cerr << "Accept failed\n"; continue;
     }
-    else if(bytes<0) {
-      std::cerr << "Error while recieving\n";
-      break;
-    }
-    send(client_fd, p, strlen(p), 0);
+
+  std::thread t(handle_client, client_fd);
+  t.detach();
   }
-  // 
-   close(client_fd);
-   close(server_fd);
+
+
+  close(server_fd);
 
   return 0;
 }
