@@ -17,13 +17,15 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
 
     if(cmd=="PING") {
-      send(client_fd, "+PONG\r\n", 7, 0)
+      send(client_fd, "+PONG\r\n", 7, 0);
     }
     else if (cmd=="ECHO") {
-      std::string text = command[1];
-      std::string response = "$"+to_string(text.length())+"\r\n"+text+"\r\n";
+      if(command.size()>1) {
+        std::string text = command[1];
+        std::string response = "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
 
-      send(client_fd, response.c_str(), response.length(), 0);
+        send(client_fd, response.c_str(), response.length(), 0);
+      }
     }
   }
 
