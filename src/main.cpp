@@ -9,24 +9,46 @@
 #include <netdb.h>
 #include <thread>
 #include <vector>
+#include <map>
 #include <algorithm>
+
+std::map <std::string, std::string> mp;
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
   if(command.size()>0) {
     std::string cmd = command[0];
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
+    std::string response = "$-1\r\n";
 
     if(cmd=="PING") {
-      send(client_fd, "+PONG\r\n", 7, 0);
+      response = "+PONG\r\n";
     }
     else if (cmd=="ECHO") {
       if(command.size()>1) {
         std::string text = command[1];
-        std::string response = "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
-
-        send(client_fd, response.c_str(), response.length(), 0);
+        response = "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
       }
     }
+    else if(cmd=="SET") {
+      if(command.size()>2) {
+        std::string key = command[1]; std::string val = command[2];
+          mp[key]=val;
+          response = "+OK\r\n";
+      }
+    }
+    else if(cmd=="GET") {
+        if(command.size()>1) {
+        std::string key = command[1];
+        if(mp.find(key)!=mp.end()) {
+          std::string val = mp[key];
+          response = "$"+std::to_string(val.length())+"\r\n"+val+"\r\n";
+        }
+      }
+
+    }
+
+    send(client_fd, response.c_str(), response.length(), 0);
+
   }
 
 }
