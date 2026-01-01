@@ -70,9 +70,10 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     else if(cmd=="RPUSH") {
       if(command.size()>2) {
         std::string list_name = command[1];
+        auto& dq = lists[list_name];
+
         for(int i=2; i<command.size(); i++) {
-          std::string element = command[2];
-          auto& dq = lists[list_name];
+          std::string element = command[i];
           dq.push_back(element);
         }
         
