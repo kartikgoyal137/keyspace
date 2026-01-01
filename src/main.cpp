@@ -14,9 +14,13 @@
 #include <chrono>
 #include <deque>
 #include <unordered_map>
+#include <shared_mutex>
+#include <condition_variable>
 
 std::map <std::string, std::string> store;
 std::unordered_map<std::string, std::deque<std::string>> lists;
+std::shared_mutex sm;
+std::condition_variable_any cv;
 
 std::string arr_to_resp(std::vector<std::string> array) {
   std::string response;
@@ -31,7 +35,10 @@ std::string arr_to_resp(std::vector<std::string> array) {
 
 void handle_key_expiry(std::string key, int64_t millisec) {
   std::this_thread::sleep_for(std::chrono::milliseconds(millisec));
-  if(store.find(key)!=store.end()) store.erase(key);
+  {
+    std::unique_lock<std::shared_mutex> lock(sm);
+    if(store.find(key)!=store.end()) store.erase(key);
+  }
 }
 
 std::string PING() {
@@ -44,17 +51,21 @@ std::string ECHO(std::string text) {
 
 std::string SET(std::vector<std::string>& command) {
   std::string key = command[1]; std::string val = command[2];
-  store[key]=val;
+  {
+    std::unique_lock<std::shared_mutex> lock(sm);
+    store[key]=val;
+  }
+
   if(command.size()>4) {
-  int64_t expire_time = std::stoi(command[4]);
-  if(command[3]=="EX") {
-  std::thread t(handle_key_expiry, key, expire_time*1000);
-  t.detach();
-  }
-  else if (command[3]=="PX") {
-  std::thread t(handle_key_expiry, key, expire_time);
-  t.detach();
-  }
+    int64_t expire_time = std::stoi(command[4]);
+    if(command[3]=="EX") {
+      std::thread t(handle_key_expiry, key, expire_time*1000);
+      t.detach();
+    }
+    else if (command[3]=="PX") {
+      std::thread t(handle_key_expiry, key, expire_time);
+      t.detach();
+    }
   }
 
   return "+OK\r\n";
@@ -62,8 +73,13 @@ std::string SET(std::vector<std::string>& command) {
 }
 
 std::string GET(std::string key) {
+  std::string val;
    if(store.find(key)!=store.end()) {
-      std::string val = store[key];
+    {
+      std::shared_lock<std::shared_mutex> lock(sm);
+      val = store[key];
+
+    }
       return "$"+std::to_string(val.length())+"\r\n"+val+"\r\n";
    }
 
@@ -72,24 +88,33 @@ std::string GET(std::string key) {
 
 std::string RPUSH(std::vector<std::string>& command) {
    std::string list_key = command[1];
-        auto& dq = lists[list_key];
+   auto& dq = lists[list_key];
+
+   {
+   std::unique_lock<std::shared_mutex> lock(sm);
 
    for(int i=2; i<command.size(); i++) {
-      std::string element = command[i];
-      dq.push_back(element);
+     std::string element = command[i];
+     dq.push_back(element);
+     }
    }
-        
+    cv.notify_one();
     return ":"+std::to_string(dq.size())+"\r\n";
 }
 
 std::string LPUSH(std::vector<std::string>& command) {
    std::string list_key = command[1];
         auto& dq = lists[list_key];
+   {
+     std::unique_lock<std::shared_mutex> lock(sm);
 
-   for(int i=2; i<command.size(); i++) {
-      std::string element = command[i];
-      dq.push_front(element);
+     for(int i=2; i<command.size(); i++) {
+       std::string element = command[i];
+       dq.push_front(element);
+     }
+
    }
+    cv.notify_one();
         
     return ":"+std::to_string(dq.size())+"\r\n";
 }
@@ -97,31 +122,79 @@ std::string LPUSH(std::vector<std::string>& command) {
 
 std::string LRANGE(std::string list_key, int64_t start, int64_t stop) {
   std::vector<std::string> array;
-  int64_t size = lists[list_key].size();
-  if(lists.find(list_key)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
+  {
+    std::shared_lock<std::shared_mutex> lock(sm);
+    int64_t size = lists[list_key].size();
+    if(lists.find(list_key)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
+    if(stop >= size) stop = size-1;
 
-  if(stop >= size) stop = size-1;
-
-  for(int i=start; i<=stop; i++) {
-    array.push_back(lists[list_key][i]);
+    for(int i=start; i<=stop; i++) {
+      array.push_back(lists[list_key][i]);
+    }
   }
+
 
   return arr_to_resp(array);
 }
 
 std::string LLEN(std::string list_key) {
-  std::string response = ":"+std::to_string(lists[list_key].size())+"\r\n";
+  int64_t size = 0;
+  {
+    std::shared_lock<std::shared_mutex> lock(sm);
+    size = lists[list_key].size();
+  }
+  std::string response = ":"+std::to_string(size)+"\r\n";
   return response;
 }
 
-std::string LPOP(std::string list_key) {
+std::string LPOP(std::string list_key, int64_t num) { //add mutex
   auto& dq = lists[list_key];
-  std::string text;
+  std::vector<std::string> array;
   if(dq.size()>0) {
-    text = dq[0]; dq.pop_front();
-    return "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
+    std::string text = dq.front(); dq.pop_front();
+    array.push_back(text);
+    if(num==1) return "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
+    num--;
+    while(num--) {
+      text = dq[0]; dq.pop_front();
+      array.push_back(text);
+    }
+    return arr_to_resp(array);
   }
   else return "$-1\r\n";
+}
+
+std::string BLPOP(std::string list_key, int64_t timeout) {
+  std::vector<std::string> array; array.push_back(list_key);
+  bool ready = true;
+
+    {
+      std::unique_lock<std::shared_mutex> lock(sm);
+
+      if(timeout==0) {
+         cv.wait(lock, [&] {
+         return lists[list_key].size()>0;
+         });
+         auto& dq = lists[list_key];
+         std::string text = dq.front(); dq.pop_front();
+         array.push_back(text);
+      }
+      else {
+         ready = cv.wait_for(lock, std::chrono::seconds(timeout), [&] {
+        return lists[list_key].size()>0;
+      });
+        if(ready) {
+         auto& dq = lists[list_key];
+         std::string text = dq.front(); dq.pop_front();
+         array.push_back(text);
+         ready=true;
+      }
+      }
+    }
+
+  if(!ready) return "$-1\r\n";
+
+  return arr_to_resp(array);
 }
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
@@ -182,7 +255,15 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     }
     else if(cmd=="LPOP") {
       if(command.size()>1) {
-        response = LPOP(command[1]);
+        int64_t num = 1;
+        if(command.size()>2) num = std::stoll(command[2]);
+        response = LPOP(command[1], num);
+      }
+    }
+    else if(cmd=="BLPOP") {
+      if(command.size()>2) {
+        int64_t timeout = std::stoll(command[2]);
+        response = BLPOP(command[1], timeout);
       }
     }
 
