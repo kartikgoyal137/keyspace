@@ -114,6 +114,16 @@ std::string LLEN(std::string list_key) {
   return response;
 }
 
+std::string LPOP(std::string list_key) {
+  auto& dq = lists[list_key];
+  std::string text;
+  if(dq.size()>0) {
+    text = dq[0]; dq.pop_front();
+    return "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
+  }
+  else return "$-1\r\n";
+}
+
 void handle_command(int client_fd, std::vector<std::string>& command) {
   if(command.size()>0) {
     std::string cmd = command[0];
@@ -168,6 +178,11 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     else if(cmd=="LLEN") {
       if(command.size()>1) {
         response = LLEN(command[1]);
+      }
+    }
+    else if(cmd=="LPOP") {
+      if(command.size()>1) {
+        response = LPOP(command[1]);
       }
     }
 
