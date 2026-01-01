@@ -133,11 +133,11 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
         int64_t size = lists[command[1]].size();
         if(start<0) {
           if(-start>size) start = 0;
-          start += size;
+          else start += size;
         }
         if(stop<0) {
           if(-stop>size) stop = 0;
-          stop += size;
+          else stop += size;
         }
         response = LRANGE(command[1], start, stop);
       }
