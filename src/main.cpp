@@ -11,8 +11,16 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <chrono>
+
+using Clock = std::chrono::steady_clock;
 
 std::map <std::string, std::string> mp;
+
+void handle_key_expiry(string key, int millisec) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(millisec));
+  if(mp.find(key)!=mp.end()) mp.erase(key);
+}
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
   if(command.size()>0) {
@@ -34,6 +42,17 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
         std::string key = command[1]; std::string val = command[2];
           mp[key]=val;
           response = "+OK\r\n";
+        if(command.size()>4) {
+          int expire_time = std::stoi(command[4]);
+          if(command[3]=="EX") {
+            std::thread t(handle_key_expiry, key, command[4]*1000);
+            t.detach();
+          }
+          else if (command[3]=="PX") {
+            std::thread t(handle_key_expiry, key, command[4]);
+            t.detach();
+          }
+        }
       }
     }
     else if(cmd=="GET") {
