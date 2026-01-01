@@ -71,8 +71,8 @@ std::string GET(std::string key) {
 }
 
 std::string RPUSH(std::vector<std::string>& command) {
-   std::string list_name = command[1];
-        auto& dq = lists[list_name];
+   std::string list_key = command[1];
+        auto& dq = lists[list_key];
 
    for(int i=2; i<command.size(); i++) {
       std::string element = command[i];
@@ -83,8 +83,8 @@ std::string RPUSH(std::vector<std::string>& command) {
 }
 
 std::string LPUSH(std::vector<std::string>& command) {
-   std::string list_name = command[1];
-        auto& dq = lists[list_name];
+   std::string list_key = command[1];
+        auto& dq = lists[list_key];
 
    for(int i=2; i<command.size(); i++) {
       std::string element = command[i];
@@ -95,18 +95,23 @@ std::string LPUSH(std::vector<std::string>& command) {
 }
 
 
-std::string LRANGE(std::string list_name, int64_t start, int64_t stop) {
+std::string LRANGE(std::string list_key, int64_t start, int64_t stop) {
   std::vector<std::string> array;
-  int64_t size = lists[list_name].size();
-  if(lists.find(list_name)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
+  int64_t size = lists[list_key].size();
+  if(lists.find(list_key)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
 
   if(stop >= size) stop = size-1;
 
   for(int i=start; i<=stop; i++) {
-    array.push_back(lists[list_name][i]);
+    array.push_back(lists[list_key][i]);
   }
 
   return arr_to_resp(array);
+}
+
+std::string LLEN(std::string list_key) {
+  std::string response = ":"+std::to_string(lists[list_key].size())+"\r\n";
+  return response;
 }
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
@@ -158,6 +163,11 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
           else stop += size;
         }
         response = LRANGE(command[1], start, stop);
+      }
+    }
+    else if(cmd=="LLEN") {
+      if(command.size()>1) {
+        response = LLEN(command[1]);
       }
     }
 
