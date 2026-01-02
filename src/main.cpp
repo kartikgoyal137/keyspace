@@ -9,7 +9,6 @@
 #include <netdb.h>
 #include <thread>
 #include <vector>
-#include <map>
 #include <algorithm>
 #include <chrono>
 #include <deque>
@@ -17,7 +16,7 @@
 #include <shared_mutex>
 #include <condition_variable>
 
-std::map <std::string, std::string> store;
+std::unordered_map <std::string, std::string> store;
 std::unordered_map<std::string, std::deque<std::string>> lists;
 std::shared_mutex sm;
 std::condition_variable_any cv;
@@ -125,6 +124,15 @@ std::string LRANGE(std::string list_key, int64_t start, int64_t stop) {
   {
     std::shared_lock<std::shared_mutex> lock(sm);
     int64_t size = lists[list_key].size();
+        if(start<0) {
+          if(-start>size) start = 0;
+          else start += size;
+        }
+        if(stop<0) {
+          if(-stop>size) stop = 0;
+          else stop += size;
+        }
+
     if(lists.find(list_key)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
     if(stop >= size) stop = size-1;
 
@@ -180,7 +188,7 @@ std::string BLPOP(std::string list_key, int64_t timeout) {
          array.push_back(text);
       }
       else {
-         ready = cv.wait_for(lock, std::chrono::seconds(timeout), [&] {
+         ready = cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] {
         return lists[list_key].size()>0;
       });
         if(ready) {
@@ -192,9 +200,20 @@ std::string BLPOP(std::string list_key, int64_t timeout) {
       }
     }
 
-  if(!ready) return "$-1\r\n";
+  if(!ready) return "*-1\r\n";
 
   return arr_to_resp(array);
+}
+
+std::string TYPE(std::string list_key) {
+  std::string response = "+none\r\n";
+  {
+    std::shared_lock<std::shared_mutex> lock(sm);
+    if(lists.find(list_key)!=lists.end()) {
+      response = "+string\r\n";
+    }
+  }
+  return response;
 }
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
@@ -236,15 +255,6 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
       if(command.size()>3) {
         int64_t start = std::stoll(command[2]);
         int64_t stop = std::stoll(command[3]);
-        int64_t size = lists[command[1]].size();
-        if(start<0) {
-          if(-start>size) start = 0;
-          else start += size;
-        }
-        if(stop<0) {
-          if(-stop>size) stop = 0;
-          else stop += size;
-        }
         response = LRANGE(command[1], start, stop);
       }
     }
@@ -262,8 +272,14 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     }
     else if(cmd=="BLPOP") {
       if(command.size()>2) {
-        int64_t timeout = std::stoll(command[2]);
-        response = BLPOP(command[1], timeout);
+        double timeout = std::stod(command[2]);
+        int64_t timeout_ms = static_cast<int64_t>(timeout * 1000);
+        response = BLPOP(command[1], timeout_ms);
+      }
+    }
+    else if(cmd=="TYPE") {
+      if(command.size()>1) {
+        response = TYPE(command[1]);
       }
     }
 
