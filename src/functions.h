@@ -369,16 +369,16 @@ std::string XRANGE(std::string stream_key, std::string start, std::string end) {
     response += "*2\r\n";
     response += bulk_string(it->first);
     std::vector<std::string> array;
-    for(auto& k : it->second) {
-      array.push_back(k->first);
-      array.push_back(k->second);
+    for(auto& k : it->second.fields) {
+      array.push_back(k.first);
+      array.push_back(k.second);
     }
     
-    response += arr_to_resp(obj.array);
+    response += arr_to_resp(array);
     ++it;
   }
 
-  response = "*"+std::to_string(count)+""\r\n" + response;
+  response = "*"+std::to_string(count)+"\r\n" + response;
 
   return response;
 }
