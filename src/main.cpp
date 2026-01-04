@@ -89,12 +89,16 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     }
     else if(cmd=="XREAD") {
       if(command.size()>3) {
-        int num_streams = (command.size() - 2)/2;
-        std::map<std::string, std::string> key_to_id;
-        for(int i=2; i<num_streams+2; i++) {
-          key_to_id[command[i]] = command[i+num_streams];
+        int64_t timeout = 0;
+        int offset = 2; if(command[1]=="BLOCK") { offset = 4; timeout = std::stoll(command[2]); }
+        int num_streams = (command.size() - offset)/2;
+        std::vector<std::pair<std::string, std::string>> key_to_id;
+        for(int i=offset; i<num_streams+offset; i++) {
+          key_to_id.emplace_back(command[i], command[i+num_streams]);
         }
-        response = XREAD(key_to_id);
+       
+        
+        response = XREAD(key_to_id, timeout);
       }
     }
 
