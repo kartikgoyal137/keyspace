@@ -9,212 +9,7 @@
 #include <netdb.h>
 #include <thread>
 #include <vector>
-#include <algorithm>
-#include <chrono>
-#include <deque>
-#include <unordered_map>
-#include <shared_mutex>
-#include <condition_variable>
-
-std::unordered_map <std::string, std::string> store;
-std::unordered_map<std::string, std::deque<std::string>> lists;
-std::shared_mutex sm;
-std::condition_variable_any cv;
-
-std::string arr_to_resp(std::vector<std::string> array) {
-  std::string response;
-  int64_t size = array.size();  
-  response = "*"+std::to_string(size)+"\r\n";
-  for(auto& ele : array) {
-    response += "$"+std::to_string(ele.size())+"\r\n"+ele+"\r\n";
-  }
-
-  return response;
-}
-
-void handle_key_expiry(std::string key, int64_t millisec) {
-  std::this_thread::sleep_for(std::chrono::milliseconds(millisec));
-  {
-    std::unique_lock<std::shared_mutex> lock(sm);
-    if(store.find(key)!=store.end()) store.erase(key);
-  }
-}
-
-std::string PING() {
-  return "+PONG\r\n";
-}
-
-std::string ECHO(std::string text) {
-  return "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
-}
-
-std::string SET(std::vector<std::string>& command) {
-  std::string key = command[1]; std::string val = command[2];
-  {
-    std::unique_lock<std::shared_mutex> lock(sm);
-    store[key]=val;
-  }
-
-  if(command.size()>4) {
-    int64_t expire_time = std::stoi(command[4]);
-    if(command[3]=="EX") {
-      std::thread t(handle_key_expiry, key, expire_time*1000);
-      t.detach();
-    }
-    else if (command[3]=="PX") {
-      std::thread t(handle_key_expiry, key, expire_time);
-      t.detach();
-    }
-  }
-
-  return "+OK\r\n";
-
-}
-
-std::string GET(std::string key) {
-  std::string val;
-   if(store.find(key)!=store.end()) {
-    {
-      std::shared_lock<std::shared_mutex> lock(sm);
-      val = store[key];
-
-    }
-      return "$"+std::to_string(val.length())+"\r\n"+val+"\r\n";
-   }
-
-   return "$-1\r\n";
-}
-
-std::string RPUSH(std::vector<std::string>& command) {
-   std::string list_key = command[1];
-   auto& dq = lists[list_key];
-
-   {
-   std::unique_lock<std::shared_mutex> lock(sm);
-
-   for(int i=2; i<command.size(); i++) {
-     std::string element = command[i];
-     dq.push_back(element);
-     }
-   }
-    cv.notify_one();
-    return ":"+std::to_string(dq.size())+"\r\n";
-}
-
-std::string LPUSH(std::vector<std::string>& command) {
-   std::string list_key = command[1];
-        auto& dq = lists[list_key];
-   {
-     std::unique_lock<std::shared_mutex> lock(sm);
-
-     for(int i=2; i<command.size(); i++) {
-       std::string element = command[i];
-       dq.push_front(element);
-     }
-
-   }
-    cv.notify_one();
-        
-    return ":"+std::to_string(dq.size())+"\r\n";
-}
-
-
-std::string LRANGE(std::string list_key, int64_t start, int64_t stop) {
-  std::vector<std::string> array;
-  {
-    std::shared_lock<std::shared_mutex> lock(sm);
-    int64_t size = lists[list_key].size();
-        if(start<0) {
-          if(-start>size) start = 0;
-          else start += size;
-        }
-        if(stop<0) {
-          if(-stop>size) stop = 0;
-          else stop += size;
-        }
-
-    if(lists.find(list_key)==lists.end() || start >= size || start > stop) return arr_to_resp(array);
-    if(stop >= size) stop = size-1;
-
-    for(int i=start; i<=stop; i++) {
-      array.push_back(lists[list_key][i]);
-    }
-  }
-
-
-  return arr_to_resp(array);
-}
-
-std::string LLEN(std::string list_key) {
-  int64_t size = 0;
-  {
-    std::shared_lock<std::shared_mutex> lock(sm);
-    size = lists[list_key].size();
-  }
-  std::string response = ":"+std::to_string(size)+"\r\n";
-  return response;
-}
-
-std::string LPOP(std::string list_key, int64_t num) { //add mutex
-  auto& dq = lists[list_key];
-  std::vector<std::string> array;
-  if(dq.size()>0) {
-    std::string text = dq.front(); dq.pop_front();
-    array.push_back(text);
-    if(num==1) return "$"+std::to_string(text.length())+"\r\n"+text+"\r\n";
-    num--;
-    while(num--) {
-      text = dq[0]; dq.pop_front();
-      array.push_back(text);
-    }
-    return arr_to_resp(array);
-  }
-  else return "$-1\r\n";
-}
-
-std::string BLPOP(std::string list_key, int64_t timeout) {
-  std::vector<std::string> array; array.push_back(list_key);
-  bool ready = true;
-
-    {
-      std::unique_lock<std::shared_mutex> lock(sm);
-
-      if(timeout==0) {
-         cv.wait(lock, [&] {
-         return lists[list_key].size()>0;
-         });
-         auto& dq = lists[list_key];
-         std::string text = dq.front(); dq.pop_front();
-         array.push_back(text);
-      }
-      else {
-         ready = cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] {
-        return lists[list_key].size()>0;
-      });
-        if(ready) {
-         auto& dq = lists[list_key];
-         std::string text = dq.front(); dq.pop_front();
-         array.push_back(text);
-         ready=true;
-      }
-      }
-    }
-
-  if(!ready) return "*-1\r\n";
-
-  return arr_to_resp(array);
-}
-
-std::string TYPE(std::string key) {
-  std::string response = "+none\r\n";
-  {
-    std::shared_lock<std::shared_mutex> lock(sm);
-    if(store.find(key)!=store.end()) {
-      response = "+string\r\n";
-    }
-  }
-  return response;
-}
+#include "functions.h"
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
   if(command.size()>0) {
@@ -282,6 +77,11 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
         response = TYPE(command[1]);
       }
     }
+    else if(cmd=="XADD") {
+      if(command.size()>2) {
+        response = XADD(command);
+      }
+    }
 
     send(client_fd, response.c_str(), response.length(), 0);
 
@@ -289,33 +89,6 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
 
 }
 
-std::vector<std::string> resp_parser(int client_fd, const char* buffer) {
-  std::vector<std::string> args; int pos = 0;
-  if(buffer[pos]!='*') return args;
-  pos++; int tokens = 0;
-  while(buffer[pos]!='\r') {
-    tokens = tokens*10 + (buffer[pos]-'0');
-    pos++;
-  }
-
-  pos+=2;
-
-  for(int i=0; i<tokens; i++) {
-    if(buffer[pos]!='$') break;
-    pos++; int str_len = 0;
-    while(buffer[pos]!='\r') {
-      str_len = str_len*10 + (buffer[pos]-'0'); 
-      pos++;
-    }
-    pos+=2;
-
-    std::string arg(buffer+pos, str_len);
-    args.push_back(arg);
-    pos+= str_len+2;
-  }
-
-  return args;
-}
 
 void handle_client(int client_fd) {
    std::cout << "Client connected\n";
