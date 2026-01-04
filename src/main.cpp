@@ -87,6 +87,16 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
         response = XRANGE(command[1], command[2], command[3]);
       }
     }
+    else if(cmd=="XREAD") {
+      if(command.size()>3) {
+        int num_streams = (command.size() - 2)/2;
+        std::map<std::string, std::string> key_to_id;
+        for(int i=2; i<num_streams+2; i++) {
+          key_to_id[command[i]] = command[i+num_streams];
+        }
+        response = XREAD(key_to_id);
+      }
+    }
 
     send(client_fd, response.c_str(), response.length(), 0);
 

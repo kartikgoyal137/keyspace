@@ -347,6 +347,9 @@ std::string XADD(std::vector<std::string> command) {
 
 
 std::string XRANGE(std::string stream_key, std::string start, std::string end) {
+    std::string response;
+ {
+  std::shared_lock<std::shared_mutex> lock(sm_stream);
   auto sit = streams.find(stream_key);
   if(sit==streams.end()) return "*0\r\n";
 
@@ -358,10 +361,10 @@ std::string XRANGE(std::string stream_key, std::string start, std::string end) {
   if (end == "+")
     end = "18446744073709551615-18446744073709551615";
   else if (end.find('-') == std::string::npos)
-    end += "--18446744073709551615";
+    end += "-18446744073709551615";
 
   auto it = stream.entries.lower_bound(start);
-  std::string response;
+
   int count = 0;
 
   while(it!=stream.entries.end() && stream_id_compare_equal(it->first, end) ) {
@@ -380,5 +383,54 @@ std::string XRANGE(std::string stream_key, std::string start, std::string end) {
 
   response = "*"+std::to_string(count)+"\r\n" + response;
 
+
+ }
+
   return response;
 }
+
+std::string XREAD(std::map<std::string, std::string> key_to_id) {
+  std::string response;
+  std::string responseFinal = "*"+std::to_string(key_to_id.size())+"\r\n";
+ {
+    std::shared_lock<std::shared_mutex> lock(sm_stream);
+
+for(auto& P : key_to_id) {
+      std::string stream_key = P.first; std::string id = P.second; 
+   auto sit = streams.find(stream_key);
+  if(sit==streams.end()) return "*0\r\n";
+
+  Stream& stream = sit->second;
+
+  std::string start = id;
+  std::string end = "18446744073709551615-18446744073709551615";
+    
+  auto it = stream.entries.lower_bound(start);
+  if(it->first == start) ++it;
+
+ 
+  responseFinal += "*2\r\n$"+std::to_string(stream_key.size())+"\r\n"+stream_key+"\r\n";
+  int count = 0;
+
+  while(it!=stream.entries.end() && stream_id_compare_equal(it->first, end) ) {
+    count++;
+    response += "*2\r\n";
+    response += bulk_string(it->first);
+    std::vector<std::string> array;
+    for(auto& k : it->second.fields) {
+      array.push_back(k.first);
+      array.push_back(k.second);
+    }
+    
+    response += arr_to_resp(array);
+    ++it;
+  }
+  responseFinal += "*"+std::to_string(count)+"\r\n"; 
+  responseFinal = responseFinal + response;
+
+ }
+}
+   
+  return responseFinal;
+}
+
