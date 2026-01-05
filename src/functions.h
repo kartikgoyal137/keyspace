@@ -302,6 +302,9 @@ std::string XADD(std::vector<std::string> command) {
   std::string stream_id_prev = "0-0";
   std::string response;
 
+  {
+    std::unique_lock<std::shared_mutex> lock(sm_stream);
+
   if(streams.find(stream_key)!=streams.end()) {
     Stream& stream = streams[stream_key];
     auto last = std::prev(stream.entries.end());
@@ -330,9 +333,7 @@ std::string XADD(std::vector<std::string> command) {
       stream_map.fields[command[i]] = command[i+1];
     }
 
-  {
-    std::unique_lock<std::shared_mutex> lock(sm_stream);
-    streams[stream_key].entries[stream_id] = stream_map;
+     streams[stream_key].entries[stream_id] = stream_map;
     {
        std::unique_lock<std::shared_mutex> typelock(sm_keytype);
        if(key_type.find(stream_key)==key_type.end())
@@ -393,6 +394,9 @@ std::string XRANGE(std::string stream_key, std::string start, std::string end) {
 }
 
 std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, int64_t timeout) {
+  std::string returnVal;
+
+  {
     std::shared_lock<std::shared_mutex> lock(sm_stream);
 
     auto check_any_data = [&]() -> bool {
@@ -440,6 +444,11 @@ std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, in
         if (streams.find(stream_key) == streams.end()) continue;
         Stream& stream = streams[stream_key];
 
+        if(id=="$") {
+            auto it = std::prev(stream.entries.end());
+            id = it->first;
+        }
+
         auto it = stream.entries.upper_bound(id);
         if (it == stream.entries.end()) continue;
 
@@ -464,9 +473,12 @@ std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, in
         
         response += "*" + std::to_string(count) + "\r\n" + entries_resp;
         responseFinal += response;
-    }
 
-    return responseFinal;
+      returnVal = responseFinal;
+    }
+  }
+  
+    return returnVal;
 }
 
 

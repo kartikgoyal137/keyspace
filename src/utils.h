@@ -9,6 +9,13 @@ long long current_time_ms() {
     ).count();
 }
 
+bool arg_check(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (tolower(a[i]) != tolower(b[i])) return false;
+    }
+    return true;
+}
 
 std::vector<std::string> resp_parser(int client_fd, const char* buffer) {
   std::vector<std::string> args; int pos = 0;

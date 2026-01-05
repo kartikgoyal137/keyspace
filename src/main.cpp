@@ -90,7 +90,7 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
     else if(cmd=="XREAD") {
       if(command.size()>3) {
         int64_t timeout = 0;
-        int offset = 2; if(command[1]=="BLOCK") { offset = 4; timeout = std::stoll(command[2]); }
+        int offset = 2; if(arg_check(command[1], "BLOCK")) { offset = 4; timeout = std::stoll(command[2]); }
         int num_streams = (command.size() - offset)/2;
         std::vector<std::pair<std::string, std::string>> key_to_id;
         for(int i=offset; i<num_streams+offset; i++) {
