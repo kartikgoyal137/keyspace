@@ -400,12 +400,17 @@ std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, in
     std::shared_lock<std::shared_mutex> lock(sm_stream);
 
     auto check_any_data = [&]() -> bool {
-        for (const auto& P : key_to_id) {
-            const std::string& stream_key = P.first;
-            const std::string& id = P.second;
+        for (auto& P : key_to_id) {
+            std::string& stream_key = P.first;
+            std::string& id = P.second;
 
             if (streams.find(stream_key) == streams.end()) continue;
             const Stream& stream = streams.at(stream_key);
+
+            if(id=="$") {
+            auto it = std::prev(stream.entries.end());
+            id = it->first;
+            }
             
             if (stream.entries.empty()) continue;
             auto it = stream.entries.upper_bound(id);
@@ -443,11 +448,6 @@ std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, in
 
         if (streams.find(stream_key) == streams.end()) continue;
         Stream& stream = streams[stream_key];
-
-        if(id=="$") {
-            auto it = std::prev(stream.entries.end());
-            id = it->first;
-        }
 
         auto it = stream.entries.upper_bound(id);
         if (it == stream.entries.end()) continue;
