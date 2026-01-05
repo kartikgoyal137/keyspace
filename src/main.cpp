@@ -10,6 +10,9 @@
 #include <thread>
 #include <vector>
 #include "functions.h"
+#include <set>
+
+std::set<int> multi;
 
 void handle_command(int client_fd, std::vector<std::string>& command) {
   if(command.size()>0) {
@@ -105,6 +108,10 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
       if(command.size()>1) {
         response = INCR(command[1]);
       }
+    }
+    else if(cmd=="MULTI") {
+      multi.insert(client_fd);
+      response = "+OK\r\n";
     }
 
     send(client_fd, response.c_str(), response.length(), 0);
