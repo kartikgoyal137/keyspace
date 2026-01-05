@@ -101,6 +101,11 @@ void handle_command(int client_fd, std::vector<std::string>& command) {
         response = XREAD(key_to_id, timeout);
       }
     }
+    else if(cmd=="INCR") {
+      if(command.size()>1) {
+        response = INCR(command[1]);
+      }
+    }
 
     send(client_fd, response.c_str(), response.length(), 0);
 

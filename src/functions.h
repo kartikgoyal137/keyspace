@@ -481,4 +481,28 @@ std::string XREAD(std::vector<std::pair<std::string, std::string>> key_to_id, in
     return returnVal;
 }
 
+std::string INCR(std::string store_key) {
+  std::string response;
+  
+{
+    std::unique_lock<std::shared_mutex> lock(sm_store);
+    if(store.find(store_key)!=store.end()) {
+      auto& val = store[store_key];
+      if(to_int(val)==-1) {
+         response = "-ERR value is not an integer or out of range\r\n";
+      }
+      else {
+        int new_val = to_int(val) + 1;
+        val = std::to_string(new_val);
+        response = ":"+val+"\r\n";
+      }
+      }
+    else{
+      store[store_key] = "1";
+      response = ":1\r\n";
+    }
+}
+
+  return response;
+}
 

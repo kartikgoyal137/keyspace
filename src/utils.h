@@ -1,12 +1,23 @@
 #include <string>
 #include <vector>
 #include <chrono>
+#include <charconv>
 
 long long current_time_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(
         system_clock::now().time_since_epoch()
     ).count();
+}
+
+int to_int(const std::string& s) {
+    int value;
+    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+
+    if (ec != std::errc() || ptr != s.data() + s.size()) {
+      return -1;
+    }
+    return value;
 }
 
 bool arg_check(const std::string& a, const std::string& b) {
