@@ -112,4 +112,27 @@ inline std::string generate_stream_id(
     return user_id;
 }
 
+std::string hex_to_binary(const std::string& hex) {
+    static const char* lut[16] = {
+        "0000","0001","0010","0011",
+        "0100","0101","0110","0111",
+        "1000","1001","1010","1011",
+        "1100","1101","1110","1111"
+    };
+
+    std::string binary;
+    binary.reserve(hex.size() * 4);
+
+    for (char c : hex) {
+        if ('0' <= c && c <= '9')
+            binary += lut[c - '0'];
+        else if ('a' <= c && c <= 'f')
+            binary += lut[c - 'a' + 10];
+        else if ('A' <= c && c <= 'F')
+            binary += lut[c - 'A' + 10];
+       
+    }
+    return binary;
+}
+
 #endif

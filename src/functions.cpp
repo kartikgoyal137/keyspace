@@ -131,7 +131,7 @@ std::string REPLCONF() {
 
 std::string PSYNC() {
   Server& server = server_info[port_number];
-  return "+FULLRESYNC"+server.master_replid+"0\r\n";
+  return "+FULLRESYNC "+server.master_replid+" 0\r\n";
 }
 
 std::string QUEUE(std::vector<std::string> command, int fd) {
