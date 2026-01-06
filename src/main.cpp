@@ -174,12 +174,12 @@ void handle_client(int client_fd) {
 
 
 int main(int argc, char **argv) {
-
+  
    for(int i=1; i<argc; i++) {
     std::string arg = argv[i];
     if(arg=="--dir" && i+1<argc) dir = argv[++i];
     else if(arg=="--dbfilename" && i+1<argc) dbfilename = argv[++i];
-    else if(arg=="port" && i+1<argc) port_number = std::stoi(argv[++i]);
+    else if(arg=="--port" && i+1<argc) port_number = std::stoi(argv[++i]);
   }
 
   // Flush after every std::cout / std::cerr
@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
   server_addr.sin_port = htons(port_number);
   
   if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
-    std::cerr << "Failed to bind to port 6379\n";
+    std::cerr << "Failed to bind to port "+std::to_string(port_number)+"\n";
     return 1;
   }
   

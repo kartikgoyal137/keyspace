@@ -30,8 +30,6 @@ struct Stream {
 extern std::string dir;
 extern std::string dbfilename;
 extern int port_number;
-
-
 extern std::set<int> pending_fd; 
 extern std::map<int, std::vector<std::vector<std::string>>> pending_cmd;
 extern std::unordered_map<std::string, KeyType> key_type;
