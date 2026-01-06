@@ -1,33 +1,137 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/17bfad7b-ebef-4bb0-af81-458c35019c29)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# FluxKV
 
-This is a starting point for C++ solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+**FluxKV** is a multi-threaded, Redis-compatible key-value store implemented in **C++23**.  
+It implements the **RESP (Redis Serialization Protocol)** to communicate with standard Redis clients and supports multiple data structures, transactions, and master–replica replication.
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+---
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## Technical Architecture
 
-# Passing the first stage
+### Core Design
 
-The entry point for your Redis implementation is in `src/main.cpp`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+- **Networking Model**  
+  Implements a synchronous, **thread-per-client** architecture using standard BSD sockets (`sys/socket`).  
+  Each incoming connection spawns a detached `std::thread` to handle the request lifecycle.
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
-```
+- **Protocol**  
+  Features a custom **RESP parser** capable of handling **Bulk Strings** and **Arrays** for command deserialization.
 
-That's all!
+---
 
-# Stage 2 & beyond
+### Data Storage & Concurrency
 
-Note: This section is for stages 2 and beyond.
+The system uses granular locking mechanisms to ensure thread safety across global data structures.
 
-1. Ensure you have `cmake` installed locally
-1. Run `./your_program.sh` to run your Redis server, which is implemented in
-   `src/main.cpp`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+#### Storage Backend
+
+- **Key-Value Store**  
+  `std::unordered_map` for O(1) string storage.
+
+- **Lists**  
+  `std::unordered_map` mapping to `std::deque` for efficient head/tail operations.
+
+- **Streams**  
+  `std::map` within a `Stream` struct to maintain strict ID ordering.
+
+#### Synchronization
+
+- Uses `std::shared_mutex`:
+  - `std::shared_lock` for multiple concurrent readers
+  - `std::unique_lock` for exclusive writers
+
+- Global locks are segregated by data type:
+  - `sm_store`
+  - `sm_list`
+  - `sm_stream`  
+  This reduces lock contention across unrelated operations.
+
+#### Blocking Operations
+
+- **BLPOP** and **XREAD** use `std::condition_variable_any` to suspend worker threads efficiently until:
+  - Data becomes available, or
+  - A timeout occurs.
+
+---
+
+## Features
+
+### 1. Supported Commands
+
+**Basic**
+- `PING`
+- `ECHO`
+
+**Strings**
+- `SET` (supports `EX` / `PX` expiry)
+- `GET`
+- `INCR`
+
+**Lists**
+- `LPUSH`
+- `RPUSH`
+- `LPOP`
+- `BLPOP` (blocking)
+- `LLEN`
+- `LRANGE`
+
+**Streams**
+- `XADD` (auto-ID generation)
+- `XRANGE`
+- `XREAD` (blocking)
+
+**System**
+- `CONFIG`
+- `INFO`
+- `TYPE`
+
+---
+
+### 2. Transactions
+
+Implements optimistic execution via:
+
+- `MULTI`
+- `EXEC`
+- `DISCARD`
+
+Commands issued inside a transaction block are:
+- Queued in a **thread-local buffer**
+- Stored in a `pending_cmd` map keyed by file descriptor
+- Executed atomically upon `EXEC`
+
+---
+
+### 3. Replication
+
+Supports a **Master–Replica** architecture.
+
+- **Handshake**
+  - Full replication handshake:
+    ```
+    PING → REPLCONF → PSYNC
+    ```
+
+- **Propagation**
+  - Write commands (`SET`, `LPUSH`, etc.) are propagated from the Master to all connected Replicas.
+
+- **Offset Tracking**
+  - Maintains `master_repl_offset` to handle synchronization states correctly.
+
+---
+
+## Build and Run
+
+### Prerequisites
+
+- C++ compiler supporting **C++23**
+- **pthread** library
+
+---
+
+### Setup
+
+```bash
+mkdir build && cd build
+cmake ..
+make
+
