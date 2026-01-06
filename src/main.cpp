@@ -157,7 +157,7 @@ void handle_command(int client_fd, std::vector<std::string> command) {
             0xc4, 0x10, 0x00, 0xfa, 0x08, 0x61, 0x6f, 0x66, 0x2d, 0x62, 0x61, 0x73, 0x65, 0xc0, 0x00, 0xff,
             0xf0, 0x6e, 0x3b, 0xfe, 0xc0, 0xff, 0x5a, 0xa2
           };
-      response = "$" + to_string(sizeof(emptyRDB)) + "\r\n";
+      response = "$" + std::to_string(sizeof(emptyRDB)) + "\r\n";
       send(client_fd, response.c_str(), response.size(), 0);
       send(client_fd, emptyRDB, sizeof(emptyRDB), 0);
       return;
