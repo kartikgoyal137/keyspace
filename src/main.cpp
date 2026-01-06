@@ -14,35 +14,42 @@
 
 int master_fd;
 
-std::vector<std::string> resp_parser(int client_fd, const char* buffer) {
-  std::vector<std::string> args; int pos = 0;
-  if(buffer[pos]!='*') return args;
-  pos++; int tokens = 0;
-  while(buffer[pos]!='\r') {
-    tokens = tokens*10 + (buffer[pos]-'0');
+std::vector<std::string> resp_parser(const char* buffer, int& consumed) {
+  std::vector<std::string> args; 
+  int pos = 0;
+  
+  if(buffer[pos] != '*') { 
+      consumed = 0; 
+      return args; 
+  }
+
+  pos++; 
+  int tokens = 0;
+  while(buffer[pos] != '\r') {
+    tokens = tokens*10+(buffer[pos]-'0');
     pos++;
   }
-
-  pos+=2;
-
-  for(int i=0; i<tokens; i++) {
-    if(buffer[pos]!='$') break;
-    pos++; int str_len = 0;
-    while(buffer[pos]!='\r') {
-      str_len = str_len*10 + (buffer[pos]-'0'); 
+  pos += 2;
+  for(int i = 0; i < tokens; i++) {
+    if(buffer[pos] != '$') break;
+    pos++; 
+    int str_len = 0;
+    while(buffer[pos] != '\r') {
+      str_len = str_len*10+(buffer[pos]-'0'); 
       pos++;
     }
-    pos+=2;
-
-    std::string arg(buffer+pos, str_len);
+    pos += 2;
+    std::string arg(buffer + pos, str_len);
     args.push_back(arg);
-    pos+= str_len+2;
+    pos += str_len+2; 
   }
 
+  consumed = pos;
   return args;
 }
 
 std::set<std::string> allowed = {"SET", "RPUSH", "LPUSH", "XADD", "LPOP", "BLPOP", "INCR"};
+
 void propagate(std::vector<std::string>& command) {
   std::string arg = command[0];
   std::transform(arg.begin(), arg.end(), arg.begin(), ::toupper);
@@ -187,7 +194,6 @@ void handle_command(int client_fd, std::vector<std::string> command) {
 
 }
 
-
 void handle_client(int client_fd) {
    std::cout << "Client connected\n";
   char buffer[1024] = {0};
@@ -195,20 +201,19 @@ void handle_client(int client_fd) {
   while(true) {
     memset(buffer, 0, sizeof(buffer));
     int bytes = recv(client_fd, buffer, sizeof(buffer)-1, 0);
-    if(bytes==0) {
-      std::cout << "Connection closed\n";
-      break;
+    if(bytes <= 0) break; 
+    int cursor = 0;
+    while (cursor < bytes) {
+        int consumed = 0;
+        std::vector<std::string> command = resp_parser(buffer + cursor, consumed);
+        
+        if (command.empty() || consumed == 0) break; 
+
+        handle_command(client_fd, command);
+        cursor += consumed;
     }
-    else if(bytes<0) {
-      std::cerr << "Error while recieving\n";
-      break;
-    }
-    
-    std::vector<std::string> command = resp_parser(client_fd, buffer);
-    handle_command(client_fd, command);
   }
-  // 
-   close(client_fd);
+  close(client_fd);
 }
 
 void connect_to_master(int master_port, std::string master_host) {
@@ -276,15 +281,25 @@ void connect_to_master(int master_port, std::string master_host) {
             rdb_end_index = header_len + rdb_content_len;
         }
     }
-    if (bytes > rdb_end_index) {
-        char* command_start = buffer + rdb_end_index;
-        std::vector<std::string> command = resp_parser(master_fd, command_start);
-        handle_command(master_fd, command);
-    }
-  
-    std::thread master(handle_client, master_fd);
-    master.join();
 
+    if (bytes > rdb_end_index) {
+        char* current_ptr = buffer + rdb_end_index;
+        int remaining_bytes = bytes - rdb_end_index;
+        
+        while (remaining_bytes > 0) {
+            int consumed = 0;
+            std::vector<std::string> command = resp_parser(current_ptr, consumed);
+            
+            if (command.empty() || consumed == 0) break;
+
+            handle_command(master_fd, command);
+            
+            current_ptr += consumed;
+            remaining_bytes -= consumed;
+        }
+    }
+
+    handle_client(master_fd);
   }
 
 }
