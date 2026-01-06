@@ -137,6 +137,9 @@ void handle_command(int client_fd, std::vector<std::string> command) {
     else if(cmd=="DISCARD") {
       response = DISCARD(client_fd);
     }
+    else if(cmd=="CONFIG") {
+      response = CONFIG(command);
+    }
 
   
   }
@@ -171,6 +174,14 @@ void handle_client(int client_fd) {
 
 
 int main(int argc, char **argv) {
+
+   for(int i=1; i<argc; i++) {
+    std::string arg = argv[i];
+    if(arg=="--dir" && i+1<argc) dir = argv[++i];
+    else if(arg=="--dbfilename" && i+1<argc) dbfilename = argv[++i];
+    else if(arg=="port" && i+1<argc) port_number = std::stoi(argv[++i]);
+  }
+
   // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
@@ -192,7 +203,7 @@ int main(int argc, char **argv) {
   struct sockaddr_in server_addr;
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = INADDR_ANY;
-  server_addr.sin_port = htons(6379);
+  server_addr.sin_port = htons(port_number);
   
   if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
     std::cerr << "Failed to bind to port 6379\n";

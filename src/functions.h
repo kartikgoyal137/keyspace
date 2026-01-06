@@ -27,6 +27,11 @@ struct Stream {
     std::map<std::string, StreamEntry> entries;
 };
 
+extern std::string dir;
+extern std::string dbfilename;
+extern int port_number;
+
+
 extern std::set<int> pending_fd; 
 extern std::map<int, std::vector<std::vector<std::string>>> pending_cmd;
 extern std::unordered_map<std::string, KeyType> key_type;
@@ -64,6 +69,7 @@ std::string call_function(std::vector<std::string> command, int client_fd);
 std::string EXEC(int fd);
 std::string QUEUE(std::vector<std::string> command, int fd);
 std::string DISCARD(int fd);
+std::string CONFIG(std::vector<std::string> command);
 
 #endif
 

@@ -16,7 +16,9 @@ std::shared_mutex sm_fd;
 std::condition_variable_any list_cv;
 std::condition_variable_any stream_cv;
 
-
+std::string dir = "-1";
+std::string dbfilename = "-1";
+int port_number = 6379;
 
 std::string call_function(std::vector<std::string> command, int client_fd) {
   std::string cmd = command[0];
@@ -100,6 +102,16 @@ std::string call_function(std::vector<std::string> command, int client_fd) {
     else if(cmd=="MULTI") {
       response = MULTI(client_fd);
     }
+    else if(cmd=="EXEC") {
+      response = EXEC(client_fd);
+    }
+    else if(cmd=="DISCARD") {
+      response = DISCARD(client_fd);
+    }
+    else if(cmd=="CONFIG") {
+      response = CONFIG(command);
+    }
+
 
   return response;
 
@@ -668,3 +680,16 @@ std::string DISCARD(int fd) {
   return response;
 }
 
+std::string CONFIG(std::vector<std::string> command) {
+  std::string response;
+  std::vector<std::string> array;
+
+  if(command.size()>2 && command[1]=="GET") {
+    std::string arg = command[2]; array.push_back(arg);
+    if(arg=="dir") { array.push_back(dir); response = arr_to_resp(array) ; }
+    else if(arg=="dbfilename") { array.push_back(dbfilename);  response = arr_to_resp(array) ; }
+  }
+  
+
+  return response;
+}
