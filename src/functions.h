@@ -77,7 +77,7 @@ std::string QUEUE(std::vector<std::string> command, int fd);
 std::string DISCARD(int fd);
 std::string CONFIG(std::vector<std::string> command);
 std::string INFO(std::vector<std::string>);
-std::string REPLCONF();
+std::string REPLCONF(std::vector<std::string>& command);
 std::string PSYNC(int);
 std::string ARR_TO_RESP(std::vector<std::string>);
 

@@ -65,6 +65,7 @@ void propagate(std::vector<std::string>& command) {
 
 void handle_command(int client_fd, std::vector<std::string> command) {
   std::string response = "$-1\r\n";
+  bool replicaSend = false;
   if(command.size()>0) {
     std::string cmd = command[0];
     std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
@@ -167,7 +168,8 @@ void handle_command(int client_fd, std::vector<std::string> command) {
       response = INFO(command);
     }
     else if(cmd=="REPLCONF") {
-      response= REPLCONF();
+      response= REPLCONF(command);
+      replicaSend = true;
     }
     else if(cmd=="PSYNC") {
       response = PSYNC(client_fd);
@@ -189,7 +191,7 @@ void handle_command(int client_fd, std::vector<std::string> command) {
   }
 
    propagate(command);
-   if(client_fd==master_fd) return;
+   if(client_fd==master_fd && !replicaSend) return;
    send(client_fd, response.c_str(), response.size(), 0); 
 
 }

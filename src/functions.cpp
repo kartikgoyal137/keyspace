@@ -114,7 +114,7 @@ std::string call_function(std::vector<std::string> command, int client_fd) {
       response = CONFIG(command);
     }
     else if(cmd=="REPLCONF") {
-      response = REPLCONF();
+      response = REPLCONF(command);
     }
     else if(cmd=="PSYNC") {
       response = PSYNC(client_fd);
@@ -131,7 +131,13 @@ std::string ARR_TO_RESP(std::vector<std::string> array) {
   return response;
 }
 
-std::string REPLCONF() {
+std::string REPLCONF(std::vector<std::string>& command) {
+  if(command.size()>2 && command[1]=="GETACK") {
+    std::vector<std::string> array = {"REPLCONF", "ACK"};
+    std::string os = std::to_string(0);
+    array.push_back(os);
+    return arr_to_resp(array);
+  }
   return "+OK\r\n";
 }
 
