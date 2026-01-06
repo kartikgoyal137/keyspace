@@ -654,5 +654,17 @@ std::string EXEC(int fd) {
   return responseFinal;
 }
 
+std::string DISCARD(int fd) {
+  std::string response = "-ERR DISCARD without MULTI\r\n"; 
+  {
+    std::unique_lock<std::shared_mutex> lock(sm_fd);
+    if(pending_fd.find(fd)!=pending_fd.end()) {
+      response = "+OK\r\n";
+      pending_fd.erase(fd);
+      if(pending_cmd.find(fd)!=pending_cmd.end()) pending_cmd.erase(fd);
+    }
+  }
 
+  return response;
+}
 

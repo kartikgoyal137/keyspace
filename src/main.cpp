@@ -134,6 +134,9 @@ void handle_command(int client_fd, std::vector<std::string> command) {
     else if(cmd=="EXEC") {
       response = EXEC(client_fd);
     }
+    else if(cmd=="DISCARD") {
+      response = DISCARD(client_fd);
+    }
 
   
   }
