@@ -211,6 +211,84 @@ void handle_client(int client_fd) {
    close(client_fd);
 }
 
+void connect_to_master(int master_port, std::string master_host) {
+  Server& server = server_info[port_number];
+  if(server.role=="-1"){
+    server.role = "master";
+    server.master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+    server.master_repl_offset = "0";
+  }
+  else if(server.role=="slave") {
+    master_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (master_fd < 0) {
+     std::cerr << "Failed to create master socket\n";
+     return ;
+    }
+    
+    struct sockaddr_in master_addr;
+    master_addr.sin_family = AF_INET;
+    master_addr.sin_port = htons(master_port);
+
+    inet_pton(AF_INET, master_host.c_str(), &master_addr.sin_addr);
+
+    if(connect(master_fd, (const sockaddr*) &master_addr, sizeof(master_addr)) < 0) {
+     std::cerr << "failed to connect to master\n";
+     return ;
+    }
+
+    const char* ping = "*1\r\n$4\r\nPING\r\n";
+    const char* replconf2 = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+    std::string replconf1 = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$"+std::to_string(std::to_string(port_number).size())+"\r\n"+std::to_string(port_number)+"\r\n";
+    const char* psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    char buffer[1024];
+    send(master_fd, ping, strlen(ping), 0);
+    ssize_t bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
+    if(bytes==-1) {
+      std::cerr << "PING to master failed";
+      return;
+    }
+
+
+    send(master_fd, replconf1.c_str(), replconf1.size(), 0);
+     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
+    send(master_fd, replconf2, strlen(replconf2), 0);
+     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
+    send(master_fd, psync, strlen(psync), 0);
+     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
+      
+    std::string rdb;
+      bytes = recv(master_fd, buffer, sizeof(buffer), 0);
+      if(bytes==0) {
+        std::cout << "Connection closed\n";
+        return;
+      }
+      else if(bytes<0) {
+        std::cerr << "Error while recieving\n";
+        return;
+       }
+          
+    int rdb_end_index = 0;
+    if (buffer[0] == '$') {
+        char* crlf = strstr(buffer, "\r\n"); 
+      if (crlf) {
+            int header_len = (crlf - buffer) + 2; 
+            int rdb_content_len = std::stoi(std::string(buffer + 1, crlf));
+            rdb_end_index = header_len + rdb_content_len;
+        }
+    }
+    if (bytes > rdb_end_index) {
+        char* command_start = buffer + rdb_end_index;
+        std::vector<std::string> command = resp_parser(master_fd, command_start);
+        handle_command(master_fd, command);
+    }
+  
+    std::thread master(handle_client, master_fd);
+    master.join();
+
+  }
+
+}
+
 
 int main(int argc, char **argv) {
   
@@ -236,69 +314,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  Server& server = server_info[port_number];
-  if(server.role=="-1"){
-    server.role = "master";
-    server.master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
-    server.master_repl_offset = "0";
-  }
-  else if(server.role=="slave") {
-    master_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (master_fd < 0) {
-     std::cerr << "Failed to create master socket\n";
-     return 1;
-    }
-    
-    struct sockaddr_in master_addr;
-    master_addr.sin_family = AF_INET;
-    master_addr.sin_port = htons(master_port);
-
-    inet_pton(AF_INET, master_host.c_str(), &master_addr.sin_addr);
-
-    if(connect(master_fd, (const sockaddr*) &master_addr, sizeof(master_addr)) < 0) {
-     std::cerr << "failed to connect to master\n";
-     return 1;
-    }
-
-    const char* ping = "*1\r\n$4\r\nPING\r\n";
-    const char* replconf2 = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
-    std::string replconf1 = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$"+std::to_string(std::to_string(port_number).size())+"\r\n"+std::to_string(port_number)+"\r\n";
-    const char* psync = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
-    char buffer[1024];
-    send(master_fd, ping, strlen(ping), 0);
-    ssize_t bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
-    if(bytes==-1) {
-      std::cerr << "PING to master failed";
-      return 1;
-    }
-
-
-    send(master_fd, replconf1.c_str(), replconf1.size(), 0);
-     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
-    send(master_fd, replconf2, strlen(replconf2), 0);
-     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
-    send(master_fd, psync, strlen(psync), 0);
-     bytes = recv(master_fd, buffer, sizeof(buffer)-1, 0);
-      
-    std::string rdb;
-
-    while(true) {
-      bytes = recv(master_fd, buffer, sizeof(buffer), 0);
-      if(bytes==0) {
-        std::cout << "Connection closed\n";
-        break;
-      }
-      else if(bytes<0) {
-        std::cerr << "Error while recieving\n";
-        break;
-       }
-         
-      rdb.append(buffer, bytes);      
-    }
-
-  }
-
-
+  std::thread replicate(connect_to_master, master_port, master_host);
+  replicate.detach();
 
 
   // Flush after every std::cout / std::cerr
